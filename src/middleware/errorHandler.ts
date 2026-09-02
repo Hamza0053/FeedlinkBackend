@@ -6,11 +6,11 @@ export class AppError extends Error {
     super(message);
     this.statusCode = statusCode;
   }
-}
+}  
 
 export const errorHandler = (
   err: Error,
-  _req: Request,
+  _req: Request,  
   res: Response,
   _next: NextFunction
 ): void => {

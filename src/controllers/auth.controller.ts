@@ -11,10 +11,10 @@ const generateToken = (userId: string, role: string): string => {
   return jwt.sign({ userId, role }, env.JWT_SECRET, {
     expiresIn: env.JWT_EXPIRES_IN as any,
   });
-};
+};  
 
 interface UserRow {
-  id: string;
+  id: string;   
   email: string;
   name: string;
   role: string;
