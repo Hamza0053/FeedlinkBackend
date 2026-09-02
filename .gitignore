@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+out/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Runtime data
+*.pid
+*.pid.lock
+
+# IDEs / Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+
+# Cache
+.cache/
+.parcel-cache/
+.eslintcache
+
+# Prisma
+# Keep your schema and migrations tracked
+# Ignore local SQLite databases
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Testing
+.nyc_output/
+
+# Vercel
+.vercel/
+
+# Misc
+*.local
