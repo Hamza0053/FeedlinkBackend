@@ -27,7 +27,16 @@ export const initializeDatabase = async (): Promise<void> => {
   }
 
   try {
-    const schemaPath = path.join(__dirname, '..', 'db', 'schema.sql');
+    const possiblePaths = [
+      path.join(__dirname, '..', 'db', 'schema.sql'),
+      path.join(__dirname, '..', '..', 'src', 'db', 'schema.sql'),
+      path.join(process.cwd(), 'src', 'db', 'schema.sql'),
+      path.join(process.cwd(), 'dist', 'db', 'schema.sql'),
+    ];
+    const schemaPath = possiblePaths.find((p) => fs.existsSync(p));
+    if (!schemaPath) {
+      throw new Error(`Database schema file not found in any expected location: ${possiblePaths.join(', ')}`);
+    }
     const schema = fs.readFileSync(schemaPath, 'utf-8');
     await pool.query(schema);
     console.log('Database schema initialized successfully');

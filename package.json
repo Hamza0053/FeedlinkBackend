@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').cpSync('src/db', 'dist/db', { recursive: true })\"",
     "start": "node dist/index.js"
   },
   "dependencies": {
