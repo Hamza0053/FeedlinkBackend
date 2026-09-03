@@ -11,16 +11,35 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware — allow any localhost port in development
+// Configured origins
+const allowedOrigins = [
+  'https://feedlink-vert.vercel.app',
+  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',').map((s) => s.trim()) : []),
+  ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()) : []),
+].filter(Boolean);
+
+// Middleware — allow frontend Vercel app, environment origins, and localhost
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (server-to-server, curl, etc.)
     if (!origin) return callback(null, true);
-    // Allow any localhost port
+
+    // Allow configured origins
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Allow any Vercel deployment of feedlink (production or preview branches)
+    if (/^https:\/\/feedlink[a-z0-9-]*\.vercel\.app$/.test(origin)) {
+      return callback(null, true);
+    }
+
+    // Allow any localhost port in development
     if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
       return callback(null, true);
     }
-    callback(new Error('Not allowed by CORS'));
+
+    callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   credentials: true,
 }));

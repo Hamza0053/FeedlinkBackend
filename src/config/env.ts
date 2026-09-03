@@ -14,6 +14,8 @@ const envSchema = z.object({
   ADMIN_EMAIL: z.string().trim().toLowerCase().default(''),
   ADMIN_PASSWORD: z.string().default(''),
   ADMIN_NAME: z.string().trim().default('Platform Admin'),
+  CORS_ORIGIN: z.string().default(''),
+  FRONTEND_URL: z.string().default(''),
 }).superRefine((data, ctx) => {
   const hasEmail = data.ADMIN_EMAIL.length > 0;
   const hasPassword = data.ADMIN_PASSWORD.length > 0;
