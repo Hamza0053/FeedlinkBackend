@@ -11,8 +11,7 @@ import {
 
 export const statsRouter = Router();
 
-statsRouter.use(authenticate, authorize('admin'));
-
+// Platform impact stats are accessible to all authenticated and public visitors
 statsRouter.get('/impact', getImpactStats);
 statsRouter.get('/monthly', getMonthlyStats);
 statsRouter.get('/top-donors', getTopDonors);

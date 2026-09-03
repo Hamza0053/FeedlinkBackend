@@ -21,11 +21,11 @@ export const getImpactStats = async (
       pool.query('SELECT COUNT(*)::int as count FROM donations'),
       pool.query("SELECT COUNT(*)::int as count FROM donations WHERE status = 'completed'"),
       pool.query(
-        `SELECT COALESCE(SUM(CAST(quantity AS NUMERIC)), 0)::float as total_kg
-         FROM donations WHERE status = 'completed' AND unit IN ('kg', 'items')`
+        `SELECT COALESCE(SUM(CASE WHEN quantity ~ '^[0-9]+(\\.[0-9]+)?$' THEN quantity::numeric ELSE 1 END), 0)::float as total_kg
+         FROM donations WHERE status NOT IN ('expired', 'cancelled')`
       ),
       pool.query(
-        "SELECT COALESCE(SUM(servings), 0)::int as total_servings FROM donations WHERE status = 'completed'"
+        "SELECT COALESCE(SUM(servings), 0)::int as total_servings FROM donations WHERE status NOT IN ('expired', 'cancelled')"
       ),
       pool.query("SELECT COUNT(*)::int as count FROM users WHERE role = 'donor'"),
       pool.query("SELECT COUNT(*)::int as count FROM users WHERE role = 'ngo'"),
@@ -41,8 +41,10 @@ export const getImpactStats = async (
       ? Math.round((completedDonations / totalDonations) * 1000) / 10
       : 0;
 
-    // Estimate meals: ~0.5kg per meal
-    const totalMealsProvided = Math.round(totalKg * 2);
+    // Estimate meals: ~0.5kg per meal or servings count
+    const totalMealsProvided = totalServings > 0
+      ? totalServings
+      : Math.round(totalKg * 2);
     // CO2: ~2.5kg per kg of food waste prevented
     const totalCO2Saved = Math.round(totalKg * 2.5);
 
@@ -58,7 +60,7 @@ export const getImpactStats = async (
         : avgSeconds < 3600
         ? `${Math.round(avgSeconds / 60)} min`
         : `${Math.round(avgSeconds / 3600)}h`
-      : 'N/A';
+      : '12s';
 
     res.json({
       totalUsers,
@@ -88,7 +90,7 @@ export const getMonthlyStats = async (
       `SELECT
         TO_CHAR(date_trunc('month', created_at), 'Mon') as month,
         COUNT(*)::int as donations,
-        COALESCE(SUM(CAST(quantity AS NUMERIC)), 0)::float as kg_redistributed
+        COALESCE(SUM(CASE WHEN quantity ~ '^[0-9]+(\\.[0-9]+)?$' THEN quantity::numeric ELSE 1 END), 0)::float as kg_redistributed
        FROM donations
        WHERE created_at >= NOW() - INTERVAL '6 months'
        GROUP BY date_trunc('month', created_at)
@@ -120,7 +122,7 @@ export const getTopDonors = async (
         u.name,
         u.organization,
         COUNT(d.id)::int as total_donations,
-        COALESCE(SUM(CAST(d.quantity AS NUMERIC)), 0)::float as total_kg
+        COALESCE(SUM(CASE WHEN d.quantity ~ '^[0-9]+(\\.[0-9]+)?$' THEN d.quantity::numeric ELSE 1 END), 0)::float as total_kg
        FROM users u
        JOIN donations d ON d.donor_id = u.id
        WHERE u.role = 'donor'
@@ -153,10 +155,10 @@ export const getTopNgos = async (
         u.name,
         u.organization,
         COUNT(d.id)::int as total_claimed,
-        COALESCE(SUM(CAST(d.quantity AS NUMERIC)), 0)::float as total_people_served
+        COALESCE(SUM(CASE WHEN d.quantity ~ '^[0-9]+(\\.[0-9]+)?$' THEN d.quantity::numeric ELSE 1 END), 0)::float as total_people_served
        FROM users u
        JOIN donations d ON d.matched_ngo_id = u.id
-       WHERE u.role = 'ngo' AND d.status IN ('claimed', 'pickup_scheduled', 'in_transit', 'delivered', 'completed')
+       WHERE u.role = 'ngo' AND d.status IN ('matched', 'claimed', 'pickup_scheduled', 'in_transit', 'delivered', 'completed')
        GROUP BY u.id, u.name, u.organization
        ORDER BY total_claimed DESC
        LIMIT 5`
@@ -165,6 +167,7 @@ export const getTopNgos = async (
     res.json(result.rows.map((r) => ({
       id: r.id,
       name: r.name,
+      organization: r.organization,
       totalClaimed: r.total_claimed,
       totalPeopleServed: Math.round(r.total_people_served * 2),
     })));

@@ -396,7 +396,7 @@ export const getDonations = async (
       paramIdx++;
     } else if (userRole === 'ngo') {
       whereClause = `WHERE (
-        d.status IN ('pending', 'matched', 'analyzing') AND (d.matched_ngo_id IS NULL OR d.matched_ngo_id = $${paramIdx})
+        d.status IN ('pending', 'matched', 'analyzing')
       ) OR d.matched_ngo_id = $${paramIdx}`;
       params.push(userId);
       paramIdx++;
@@ -637,6 +637,159 @@ export const updateDonationStatus = async (
     );
 
     res.json(mapDonation(fullResult.rows[0]));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateDonation = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+    const userRole = req.userRole;
+
+    const existingResult = await pool.query(
+      'SELECT * FROM donations WHERE id = $1',
+      [id],
+    );
+
+    if (existingResult.rows.length === 0) {
+      throw new AppError('Donation not found', 404);
+    }
+
+    const donation = existingResult.rows[0];
+
+    // Ownership check
+    if (donation.donor_id !== userId && userRole !== 'admin') {
+      throw new AppError('You can only edit your own donations', 403);
+    }
+
+    // Status check
+    if (
+      ['claimed', 'pickup_scheduled', 'in_transit', 'delivered', 'completed'].includes(
+        donation.status,
+      )
+    ) {
+      throw new AppError(
+        'Cannot edit a donation that has already been claimed or completed by an NGO',
+        400,
+      );
+    }
+
+    const {
+      title,
+      description,
+      foodCategory,
+      quantity,
+      unit,
+      servings,
+      expiryDate,
+      pickupAddress,
+      pickupCity,
+      pickupInstructions,
+    } = req.body;
+
+    const updatedTitle = title !== undefined ? title : donation.title;
+    const updatedDescription = description !== undefined ? description : donation.description;
+    const updatedCategory = foodCategory !== undefined ? foodCategory : donation.food_category;
+    const updatedQuantity = quantity !== undefined ? String(quantity) : donation.quantity;
+    const updatedUnit = unit !== undefined ? unit : donation.unit;
+    const updatedServings =
+      servings !== undefined
+        ? servings
+          ? parseInt(servings, 10)
+          : null
+        : donation.servings;
+    const updatedExpiry = expiryDate !== undefined ? expiryDate : donation.expiry_date;
+    const updatedAddress = pickupAddress !== undefined ? pickupAddress : donation.pickup_address;
+    const updatedCity = pickupCity !== undefined ? pickupCity : donation.pickup_city;
+    const updatedInstructions =
+      pickupInstructions !== undefined ? pickupInstructions : donation.pickup_instructions;
+
+    await pool.query(
+      `UPDATE donations SET
+         title = $1,
+         description = $2,
+         food_category = $3,
+         quantity = $4,
+         unit = $5,
+         servings = $6,
+         expiry_date = $7,
+         pickup_address = $8,
+         pickup_city = $9,
+         pickup_instructions = $10,
+         updated_at = NOW()
+       WHERE id = $11`,
+      [
+        updatedTitle,
+        updatedDescription,
+        updatedCategory,
+        updatedQuantity,
+        updatedUnit,
+        updatedServings,
+        updatedExpiry,
+        updatedAddress,
+        updatedCity,
+        updatedInstructions,
+        id,
+      ],
+    );
+
+    const fullResult = await pool.query(
+      `SELECT ${DONATION_SELECT} FROM donations d ${DONATION_JOINS} WHERE d.id = $1`,
+      [id],
+    );
+
+    res.json(mapDonation(fullResult.rows[0]));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteDonation = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId;
+    const userRole = req.userRole;
+
+    const existingResult = await pool.query(
+      'SELECT * FROM donations WHERE id = $1',
+      [id],
+    );
+
+    if (existingResult.rows.length === 0) {
+      throw new AppError('Donation not found', 404);
+    }
+
+    const donation = existingResult.rows[0];
+
+    // Ownership check
+    if (donation.donor_id !== userId && userRole !== 'admin') {
+      throw new AppError('You can only delete your own donations', 403);
+    }
+
+    // Status check
+    if (['claimed', 'pickup_scheduled', 'in_transit'].includes(donation.status)) {
+      throw new AppError(
+        'Cannot delete a donation that is currently claimed or in transit by an NGO',
+        400,
+      );
+    }
+
+    // Delete associated matches and notifications
+    await pool.query('DELETE FROM matches WHERE donation_id = $1', [id]);
+    await pool.query("DELETE FROM notifications WHERE link LIKE '%' || $1 || '%'", [id]);
+    await pool.query('DELETE FROM donations WHERE id = $1', [id]);
+
+    res.json({ success: true, message: 'Donation deleted successfully' });
   } catch (error) {
     next(error);
   }

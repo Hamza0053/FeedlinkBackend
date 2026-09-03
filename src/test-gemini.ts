@@ -29,9 +29,10 @@ async function diagnose() {
 
   // 3. Test models
   const modelsToTest = [
+    'gemini-flash-latest',
+    'gemini-3.6-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-    'gemini-pro',
   ];
 
   for (const modelName of modelsToTest) {

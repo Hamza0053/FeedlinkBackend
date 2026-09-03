@@ -14,16 +14,20 @@ import { env } from '../config/env';
 // Client initialisation (lazy, safe when key is absent)
 // ---------------------------------------------------------------------------
 
+let currentApiKey = '';
 let genAI: GoogleGenerativeAI | null = null;
 
 const getClient = (): GoogleGenerativeAI | null => {
-  if (genAI) return genAI;
-  if (!env.GEMINI_API_KEY || env.GEMINI_API_KEY.trim() === '') {
+  const apiKey = (process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) {
     console.log('[Gemini] API key not configured — AI analysis disabled');
     return null;
   }
+  if (genAI && currentApiKey === apiKey) return genAI;
+
   try {
-    genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
+    genAI = new GoogleGenerativeAI(apiKey);
+    currentApiKey = apiKey;
     return genAI;
   } catch (error) {
     console.error('[Gemini] Failed to initialise client:', error);
@@ -75,30 +79,48 @@ const parseGeminiJson = <T>(raw: string): T | null => {
  */
 const callGemini = async (
   prompt: string,
-  timeoutMs = 90_000,
+  timeoutMs = 20_000,
+  maxRetries = 2,
 ): Promise<string | null> => {
   const client = getClient();
   if (!client) return null;
 
-  try {
-    const model = client.getGenerativeModel({ model: 'gemini-3.6-flash' });
+  const candidateModels = ['gemini-flash-latest', 'gemini-3.6-flash'];
 
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Gemini timeout')), timeoutMs),
-    );
+  for (const modelName of candidateModels) {
+    const model = client.getGenerativeModel({ model: modelName });
 
-    const result = await Promise.race([
-      model.generateContent(prompt),
-      timeoutPromise,
-    ]);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.log(`[Gemini] Retrying ${modelName} (attempt ${attempt + 1}/${maxRetries + 1})...`);
+          await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
+        }
 
-    const text = result.response.text();
-    return text || null;
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error('[Gemini] API call failed:', msg);
-    return null;
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Gemini timeout')), timeoutMs),
+        );
+
+        const result = await Promise.race([
+          model.generateContent(prompt),
+          timeoutPromise,
+        ]);
+
+        const text = result.response.text();
+        if (text) return text;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.warn(`[Gemini] ${modelName} attempt ${attempt + 1}/${maxRetries + 1} failed:`, msg);
+
+        const isTransient = msg.includes('503') || msg.includes('timeout') || msg.includes('high demand');
+        if (!isTransient) {
+          break; // Move to next candidate model on 404 or non-transient error
+        }
+      }
+    }
   }
+
+  return null;
 };
 
 // ---------------------------------------------------------------------------

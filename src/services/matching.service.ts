@@ -116,51 +116,42 @@ export const findBestMatch = async (
   urgencyScore: number,
 ): Promise<MatchResult | null> => {
   try {
-    // 1. Get all NGO users
+    // 1 & 2. Get all NGO candidates with pre-aggregated counts in a single query
     const ngoResult = await pool.query(
-      `SELECT id, name, organization, address FROM users WHERE role = 'ngo'`,
+      `SELECT 
+        u.id, 
+        u.name, 
+        u.organization, 
+        u.address,
+        COALESCE(SUM(CASE WHEN d.id IS NOT NULL AND d.status NOT IN ('completed', 'cancelled', 'expired') THEN 1 ELSE 0 END), 0)::int as active_count,
+        COALESCE(SUM(CASE WHEN d.id IS NOT NULL AND d.food_category = $1 AND d.status IN ('claimed', 'delivered', 'completed') THEN 1 ELSE 0 END), 0)::int as category_history_count
+      FROM users u
+      LEFT JOIN donations d ON d.matched_ngo_id = u.id
+      WHERE u.role = 'ngo'
+      GROUP BY u.id, u.name, u.organization, u.address`,
+      [foodCategory],
     );
 
     if (ngoResult.rows.length === 0) {
       return null;
     }
 
-    // 2. Build candidate list with pre-fetched stats
-    const candidates: NgoCandidate[] = await Promise.all(
-      ngoResult.rows.map(async (ngo) => {
-        const [activeResult, categoryResult] = await Promise.all([
-          pool.query(
-            `SELECT COUNT(*)::int as active_count FROM donations
-             WHERE matched_ngo_id = $1
-               AND status NOT IN ('completed', 'cancelled', 'expired')`,
-            [ngo.id],
-          ),
-          pool.query(
-            `SELECT COUNT(*)::int as cat_count FROM donations
-             WHERE matched_ngo_id = $1
-               AND food_category = $2
-               AND status IN ('claimed', 'delivered', 'completed')`,
-            [ngo.id, foodCategory],
-          ),
-        ]);
+    const candidates: NgoCandidate[] = ngoResult.rows.map((row) => {
+      const address: string | null = row.address || null;
+      const city = address
+        ? address.split(',').pop()?.trim() || null
+        : null;
 
-        // Derive city from address (simple heuristic: last segment)
-        const address: string | null = ngo.address || null;
-        const city = address
-          ? address.split(',').pop()?.trim() || null
-          : null;
-
-        return {
-          id: ngo.id,
-          name: ngo.name,
-          organization: ngo.organization || null,
-          address,
-          city,
-          activeCount: activeResult.rows[0].active_count,
-          categoryHistoryCount: categoryResult.rows[0].cat_count,
-        };
-      }),
-    );
+      return {
+        id: row.id,
+        name: row.name,
+        organization: row.organization || null,
+        address,
+        city,
+        activeCount: row.active_count,
+        categoryHistoryCount: row.category_history_count,
+      };
+    });
 
     // 3. Score each candidate
     const scored = candidates.map((ngo) => {
