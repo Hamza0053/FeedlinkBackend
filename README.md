@@ -45,4 +45,5 @@ PostgreSQL hosted on Neon.
 ## Running Locally
 
 npm install
+
 npm run dev
