@@ -77,6 +77,27 @@ CREATE TABLE IF NOT EXISTS matches (
     matched_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- NGO Receiving Requirements table
+CREATE TABLE IF NOT EXISTS ngo_requirements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ngo_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(500) NOT NULL,
+    description TEXT,
+    food_category VARCHAR(50) NOT NULL,
+    quantity_needed DECIMAL(12,2) NOT NULL CHECK (quantity_needed > 0),
+    unit VARCHAR(50) NOT NULL,
+    remaining_quantity DECIMAL(12,2) NOT NULL CHECK (remaining_quantity >= 0),
+    needed_from TIMESTAMP WITH TIME ZONE NOT NULL,
+    needed_until TIMESTAMP WITH TIME ZONE NOT NULL,
+    pickup_city VARCHAR(255) NOT NULL,
+    urgency_level VARCHAR(20) DEFAULT 'medium' CHECK (urgency_level IN ('low', 'medium', 'high', 'critical')),
+    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'fulfilled', 'expired', 'cancelled')),
+    fulfilled_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT chk_needed_until_after_from CHECK (needed_until > needed_from)
+);
+
 -- Impact statistics (materialized view or computed)
 CREATE TABLE IF NOT EXISTS impact_snapshots (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -100,6 +121,11 @@ CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(user_id, read
 CREATE INDEX IF NOT EXISTS idx_matches_donation_id ON matches(donation_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_requirements_ngo_id ON ngo_requirements(ngo_id);
+CREATE INDEX IF NOT EXISTS idx_requirements_status ON ngo_requirements(status);
+CREATE INDEX IF NOT EXISTS idx_requirements_food_category ON ngo_requirements(food_category);
+CREATE INDEX IF NOT EXISTS idx_requirements_needed_until ON ngo_requirements(needed_until);
+CREATE INDEX IF NOT EXISTS idx_requirements_active ON ngo_requirements(ngo_id, status, needed_from, needed_until) WHERE status = 'active';
 
 -- Add AI columns to existing tables if they don't exist (migration-safe)
 DO $$ BEGIN
@@ -120,5 +146,12 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='match_factors') THEN
     ALTER TABLE matches ADD COLUMN match_factors JSONB;
+  END IF;
+END $$;
+
+-- Add requirement_id to matches table if it doesn't exist
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='matches' AND column_name='requirement_id') THEN
+    ALTER TABLE matches ADD COLUMN requirement_id UUID REFERENCES ngo_requirements(id);
   END IF;
 END $$;

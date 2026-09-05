@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
 import { findBestMatch } from '../services/matching.service';
+import { fulfillRequirementQuantity } from '../controllers/requirement.controller';
 import { createNotification } from '../services/notification.service';
 import { analyzeFoodDonation, isAiAvailable, AiUrgencyResult } from '../services/gemini.service';
 
@@ -207,7 +208,7 @@ const DONATION_SELECT = `
   d.match_explanation,
   d.match_score,
   d.matched_ngo_id,
-  ngo_org.organization as matched_ngo_name,
+  COALESCE(ngo_org.organization, ngo_org.name) as matched_ngo_name,
   d.claimed_at,
   d.pickup_scheduled_at,
   d.delivered_at,
@@ -326,6 +327,7 @@ export const createDonation = async (
     );
 
     if (match) {
+      console.log(`[Donation] Donation ${donationId}: Matched to NGO ${match.ngoName} (requirement ${match.requirementId}, score ${match.matchScore})`);
       await pool.query(
         `UPDATE donations SET
            status = 'matched',
@@ -337,6 +339,19 @@ export const createDonation = async (
         [match.ngoId, match.matchExplanation, match.matchScore, donationId],
       );
 
+      // Consume quantity from the matched requirement (partial fulfillment)
+      if (match.requirementId) {
+        const donationServings = parsedServings || parseFloat(quantity) || 0;
+        if (donationServings > 0) {
+          try {
+            await fulfillRequirementQuantity(match.requirementId, donationServings);
+          } catch (fulfillError) {
+            console.error('Failed to fulfill requirement quantity:', fulfillError);
+            // Don't fail the whole operation — match is already saved
+          }
+        }
+      }
+
       // Notify the matched NGO
       const aiTag = isAiAvailable() ? 'AI recommended' : 'System matched';
       await createNotification(
@@ -346,6 +361,8 @@ export const createDonation = async (
         `"${title}" has been matched with your organisation (${aiTag}, score ${match.matchScore}/100). Review and claim it.`,
         `/donations/${donationId}`,
       );
+    } else {
+      console.log(`[Donation] Donation ${donationId}: No eligible active requirement found. Donation remains in 'analyzing' status — visible for NGO claim.`);
     }
 
     // 5. Notify donor
@@ -430,6 +447,7 @@ export const getAvailableDonations = async (
     const result = await pool.query(
       `SELECT ${DONATION_SELECT} FROM donations d ${DONATION_JOINS}
        WHERE d.status IN ('pending', 'matched', 'analyzing')
+         AND d.matched_ngo_id IS NULL
        ORDER BY d.urgency_score DESC, d.created_at DESC`,
     );
 

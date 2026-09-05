@@ -9,6 +9,8 @@ export type NotificationType =
   | 'donation_completed'
   | 'donation_expired'
   | 'new_available'
+  | 'requirement_matched'
+  | 'requirement_fulfilled'
   | 'system';
 
 export const createNotification = async (
