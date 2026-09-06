@@ -139,11 +139,7 @@ const runAiAnalysis = async (
     shelfLifeEstimate: det.shelfLifeEstimate,
     recommendedDistribution: det.recommendedDistribution,
     recommendedAction: 'Distribute to a nearby NGO as soon as possible.',
-<<<<<<< HEAD
-    explanation: `Urgency assessed based on expiry date (${det.shelfLifeEstimate}) and food category (${foodCategory}). AI analysis was not available.`,
-=======
     explanation: `Urgency assessed based on expiry date (${det.shelfLifeEstimate}) and food category (${foodCategory}).`,
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
     storageRecommendations: det.storageRecommendations,
     analysisTimestamp: new Date().toISOString(),
     source: 'deterministic',
@@ -369,23 +365,7 @@ export const createDonation = async (
       console.log(`[Donation] Donation ${donationId}: No eligible active requirement found. Donation remains in 'analyzing' status — visible for NGO claim.`);
     }
 
-<<<<<<< HEAD
-    // 5. Notify donor
-    const matchText = match
-      ? ` and AI-matched with ${match.ngoName} (score ${match.matchScore}/100)`
-      : '';
-    await createNotification(
-      req.userId!,
-      'donation_created',
-      'Donation Created & Analyzed',
-      `Your donation "${title}" has been submitted${matchText}. Urgency: ${analysis.urgencyLevel.toUpperCase()}.`,
-      `/donations/${donationId}`,
-    );
-
-    // 6. Return full donation
-=======
     // 5. Return full donation
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
     const fullResult = await pool.query(
       `SELECT ${DONATION_SELECT} FROM donations d ${DONATION_JOINS} WHERE d.id = $1`,
       [donationId],
@@ -497,23 +477,15 @@ export const claimDonation = async (
   res: Response,
   next: NextFunction,
 ): Promise<void> => {
-<<<<<<< HEAD
-=======
   const client = await pool.connect();
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
   try {
     const { id } = req.params;
     const ngoId = req.userId;
 
-<<<<<<< HEAD
-    const donationResult = await pool.query(
-      'SELECT * FROM donations WHERE id = $1',
-=======
     await client.query('BEGIN');
 
     const donationResult = await client.query(
       'SELECT * FROM donations WHERE id = $1 FOR UPDATE',
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
       [id],
     );
 
@@ -523,8 +495,6 @@ export const claimDonation = async (
 
     const donation = donationResult.rows[0];
 
-<<<<<<< HEAD
-=======
     if (donation.status === 'claimed') {
       // Idempotent success: donation is already claimed.
       // Return the current state without creating duplicate matches/notifications.
@@ -537,7 +507,6 @@ export const claimDonation = async (
       return;
     }
 
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
     if (!['pending', 'matched', 'analyzing'].includes(donation.status)) {
       throw new AppError(
         `Donation cannot be claimed (status: ${donation.status})`,
@@ -545,30 +514,20 @@ export const claimDonation = async (
       );
     }
 
-<<<<<<< HEAD
-    await pool.query(
-=======
     await client.query(
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
       `UPDATE donations SET status = 'claimed', matched_ngo_id = $1, claimed_at = NOW(), updated_at = NOW()
        WHERE id = $2`,
       [ngoId, id],
     );
 
     if (!donation.matched_ngo_id) {
-<<<<<<< HEAD
-      await pool.query(
-=======
       await client.query(
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
         `INSERT INTO matches (donation_id, ngo_id, match_score, match_explanation)
          VALUES ($1, $2, 100, 'Manually claimed by NGO')`,
         [id, ngoId],
       );
     }
 
-<<<<<<< HEAD
-=======
     await client.query('COMMIT');
 
     // Notify donor with the claiming NGO's name
@@ -578,16 +537,11 @@ export const claimDonation = async (
     );
     const ngoName = ngoResult.rows[0]?.ngo_name || 'an NGO';
 
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
     await createNotification(
       donation.donor_id,
       'donation_claimed',
       'Donation Claimed!',
-<<<<<<< HEAD
-      `Your donation "${donation.title}" has been claimed by an NGO.`,
-=======
       `Your donation "${donation.title}" has been claimed by ${ngoName}.`,
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
       `/donations/${id}`,
     );
 
@@ -598,14 +552,10 @@ export const claimDonation = async (
 
     res.json(mapDonation(fullResult.rows[0]));
   } catch (error) {
-<<<<<<< HEAD
-    next(error);
-=======
     await client.query('ROLLBACK').catch(() => {});
     next(error);
   } finally {
     client.release();
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
   }
 };
 
@@ -657,55 +607,6 @@ export const updateDonationStatus = async (
       params,
     );
 
-<<<<<<< HEAD
-    const notifyUserId =
-      status === 'completed' || status === 'pickup_scheduled'
-        ? donation.donor_id
-        : donation.matched_ngo_id;
-
-    if (notifyUserId) {
-      const notificationMessages: Record<
-        string,
-        {
-          title: string;
-          message: string;
-          type:
-            | 'donation_claimed'
-            | 'pickup_scheduled'
-            | 'donation_completed'
-            | 'donation_matched';
-        }
-      > = {
-        pickup_scheduled: {
-          type: 'pickup_scheduled',
-          title: 'Pickup Scheduled',
-          message: `Pickup has been scheduled for "${donation.title}".`,
-        },
-        in_transit: {
-          type: 'donation_matched',
-          title: 'Donation In Transit',
-          message: `"${donation.title}" is now in transit.`,
-        },
-        delivered: {
-          type: 'donation_matched',
-          title: 'Donation Delivered',
-          message: `"${donation.title}" has been delivered.`,
-        },
-        completed: {
-          type: 'donation_completed',
-          title: 'Donation Completed!',
-          message: `"${donation.title}" has been completed. Thank you for your contribution!`,
-        },
-        cancelled: {
-          type: 'donation_matched',
-          title: 'Donation Cancelled',
-          message: `"${donation.title}" has been cancelled.`,
-        },
-      };
-
-      const notif = notificationMessages[status];
-      if (notif) {
-=======
     const notificationMessages: Record<
       string,
       {
@@ -737,7 +638,6 @@ export const updateDonationStatus = async (
         status === 'in_transit' ? donation.matched_ngo_id : donation.donor_id;
 
       if (notifyUserId) {
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
         await createNotification(
           notifyUserId,
           notif.type,
