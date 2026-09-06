@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { pool } from '../config/database';
 import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
@@ -130,6 +131,49 @@ export const getMe = async (
 
     const user = sanitizeUser(result.rows[0]);
     res.json(user);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const forgotPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { email } = req.body;
+
+    // Verify the email is registered
+    const userResult = await pool.query(
+      'SELECT id, email, name FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (userResult.rows.length === 0) {
+      throw new AppError('No account found with this email.', 404);
+    }
+
+    const user = userResult.rows[0];
+
+    // Generate a secure random token
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Store the token
+    await pool.query(
+      `INSERT INTO password_resets (user_id, token, expires_at)
+       VALUES ($1, $2, $3)`,
+      [user.id, token, expiresAt.toISOString()]
+    );
+
+    // In production, send an email with a reset link containing the token.
+    // For development/demo, log the token so it can be tested manually.
+    console.log(`[Auth] Password reset for ${email}: token=${token}`);
+
+    res.json({
+      message: 'Password reset instructions sent to your email.',
+    });
   } catch (error) {
     next(error);
   }
