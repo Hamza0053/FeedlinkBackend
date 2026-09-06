@@ -64,8 +64,6 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-<<<<<<< HEAD
-=======
 -- Password reset tokens
 CREATE TABLE IF NOT EXISTS password_resets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -76,7 +74,6 @@ CREATE TABLE IF NOT EXISTS password_resets (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
->>>>>>> c3bddc98b0e89b75ca1a8e53245df14d7f6d6fca
 -- Matches table (AI matching history)
 CREATE TABLE IF NOT EXISTS matches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
