@@ -11,6 +11,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().default('dev-secret-change-in-production'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   GEMINI_API_KEY: z.string().default(''),
+  OPENROUTER_API_KEY: z.string().default(''),
   ADMIN_EMAIL: z.string().trim().toLowerCase().default(''),
   ADMIN_PASSWORD: z.string().default(''),
   ADMIN_NAME: z.string().trim().default('Platform Admin'),

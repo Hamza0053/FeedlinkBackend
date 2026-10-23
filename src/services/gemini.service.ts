@@ -1,38 +1,45 @@
 /**
- * Gemini AI Service for FeedLink AI
+ * AI Service for FeedLink AI (powered by Google Gemma 4 via OpenRouter)
  *
  * Provides AI-powered food analysis and NGO match explanations.
- * All methods degrade gracefully when GEMINI_API_KEY is not set
+ * All methods degrade gracefully when OPENROUTER_API_KEY is not set
  * or the API is unavailable — returning null so callers can fall
  * back to deterministic logic.
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 import { env } from '../config/env';
+
+// ---------------------------------------------------------------------------
+// Model configuration
+// ---------------------------------------------------------------------------
+
+/** Gemma 4 model served via OpenRouter's free tier. */
+const GEMMA_MODEL = 'google/gemma-4-27b-it:free';
 
 // ---------------------------------------------------------------------------
 // Client initialisation (lazy, safe when key is absent)
 // ---------------------------------------------------------------------------
 
-let currentApiKey = '';
-let genAI: GoogleGenerativeAI | null = null;
+let openaiClient: OpenAI | null = null;
 
-const getClient = (): GoogleGenerativeAI | null => {
-  const apiKey = (process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || '').trim();
+const getClient = (): OpenAI | null => {
+  const apiKey = (process.env.OPENROUTER_API_KEY || env.OPENROUTER_API_KEY || '').trim();
   if (!apiKey) {
-    console.log('[Gemini] API key not configured — AI analysis disabled');
+    console.log('[Gemma] OPENROUTER_API_KEY not configured — AI analysis disabled');
     return null;
   }
-  if (genAI && currentApiKey === apiKey) return genAI;
+  if (openaiClient) return openaiClient;
 
-  try {
-    genAI = new GoogleGenerativeAI(apiKey);
-    currentApiKey = apiKey;
-    return genAI;
-  } catch (error) {
-    console.error('[Gemini] Failed to initialise client:', error);
-    return null;
-  }
+  openaiClient = new OpenAI({
+    baseURL: 'https://openrouter.ai/api/v1',
+    apiKey,
+    defaultHeaders: {
+      'HTTP-Referer': 'https://feedlink.ai',
+      'X-Title': 'FeedLink AI',
+    },
+  });
+  return openaiClient;
 };
 
 // ---------------------------------------------------------------------------
@@ -75,7 +82,7 @@ const parseGeminiJson = <T>(raw: string): T | null => {
 };
 
 /**
- * Call Gemini with a timeout. Returns null on any failure.
+ * Call Gemma 4 via OpenRouter with a timeout. Returns null on any failure.
  */
 const callGemini = async (
   prompt: string,
@@ -85,38 +92,34 @@ const callGemini = async (
   const client = getClient();
   if (!client) return null;
 
-  const candidateModels = ['gemini-flash-latest', 'gemini-3.6-flash'];
-
-  for (const modelName of candidateModels) {
-    const model = client.getGenerativeModel({ model: modelName });
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        if (attempt > 0) {
-          console.log(`[Gemini] Retrying ${modelName} (attempt ${attempt + 1}/${maxRetries + 1})...`);
-          await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
-        }
-
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Gemini timeout')), timeoutMs),
-        );
-
-        const result = await Promise.race([
-          model.generateContent(prompt),
-          timeoutPromise,
-        ]);
-
-        const text = result.response.text();
-        if (text) return text;
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        console.warn(`[Gemini] ${modelName} attempt ${attempt + 1}/${maxRetries + 1} failed:`, msg);
-
-        const isTransient = msg.includes('503') || msg.includes('timeout') || msg.includes('high demand');
-        if (!isTransient) {
-          break; // Move to next candidate model on 404 or non-transient error
-        }
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        console.log(`[Gemma] Retrying (attempt ${attempt + 1}/${maxRetries + 1})...`);
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
       }
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Gemma timeout')), timeoutMs),
+      );
+
+      const result = await Promise.race([
+        client.chat.completions.create({
+          model: GEMMA_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 1024,
+        }),
+        timeoutPromise,
+      ]);
+
+      const text = result.choices[0]?.message?.content ?? null;
+      if (text) return text;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.warn(`[Gemma] Attempt ${attempt + 1}/${maxRetries + 1} failed:`, msg);
+
+      const isTransient = msg.includes('503') || msg.includes('timeout') || msg.includes('429') || msg.includes('high demand');
+      if (!isTransient) break;
     }
   }
 
@@ -268,3 +271,13 @@ export const explainNgoMatch = async (
 export const isAiAvailable = (): boolean => {
   return getClient() !== null;
 };
+
+/**
+ * Returns information about the AI model configuration.
+ * `configured` is false when OPENROUTER_API_KEY is not set.
+ */
+export const getAiModel = () => ({
+  configured: isAiAvailable(),
+  provider: 'Google Gemma (via OpenRouter)',
+  model: GEMMA_MODEL,
+});
