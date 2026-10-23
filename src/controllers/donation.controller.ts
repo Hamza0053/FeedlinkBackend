@@ -641,10 +641,10 @@ export const updateDonationStatus = async (
         await createNotification(
           notifyUserId,
           notif.type,
-          notif.title,
+          notif.title,  
           notif.message,
           `/donations/${id}`,
-        );
+        );  
       }
     }
 
